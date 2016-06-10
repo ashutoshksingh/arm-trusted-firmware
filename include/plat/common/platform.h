@@ -56,11 +56,13 @@ struct image_desc;
 /*******************************************************************************
  * Mandatory common functions
  ******************************************************************************/
-uint64_t plat_get_syscnt_freq(void);
+unsigned long long plat_get_syscnt_freq(void) __deprecated;
+unsigned int plat_get_syscnt_freq2(void);
+
 int plat_get_image_source(unsigned int image_id,
 			uintptr_t *dev_handle,
 			uintptr_t *image_spec);
-unsigned long plat_get_ns_image_entrypoint(void);
+uintptr_t plat_get_ns_image_entrypoint(void);
 unsigned int plat_my_core_pos(void);
 int plat_core_pos_by_mpidr(u_register_t mpidr);
 
@@ -249,6 +251,8 @@ void bl32_plat_enable_mmu(uint32_t flags);
  ******************************************************************************/
 int plat_get_rotpk_info(void *cookie, void **key_ptr, unsigned int *key_len,
 			unsigned int *flags);
+int plat_get_nv_ctr(void *cookie, unsigned int *nv_ctr);
+int plat_set_nv_ctr(void *cookie, unsigned int nv_ctr);
 
 #if ENABLE_PLAT_COMPAT
 /*

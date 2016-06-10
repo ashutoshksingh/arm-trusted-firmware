@@ -29,6 +29,8 @@
  */
 #include <arch.h>
 #include <arch_helpers.h>
+#include <assert.h>
+#include <debug.h>
 #include <mmio.h>
 #include <plat_arm.h>
 #include <platform_def.h>
@@ -40,6 +42,13 @@ extern const mmap_region_t plat_arm_mmap[];
 #pragma weak plat_get_ns_image_entrypoint
 #pragma weak plat_arm_get_mmap
 
+/* Conditionally provide a weak definition of plat_get_syscnt_freq2 to avoid
+ * conflicts with the definition in plat/common. */
+#if ERROR_DEPRECATED
+#pragma weak plat_get_syscnt_freq2
+#else
+#pragma weak plat_get_syscnt_freq
+#endif
 
 /*******************************************************************************
  * Macro generating the code for the function setting up the pagetables as per
@@ -93,7 +102,7 @@ DEFINE_CONFIGURE_MMU_EL(1)
 DEFINE_CONFIGURE_MMU_EL(3)
 
 
-unsigned long plat_get_ns_image_entrypoint(void)
+uintptr_t plat_get_ns_image_entrypoint(void)
 {
 	return PLAT_ARM_NS_IMAGE_OFFSET;
 }
@@ -137,6 +146,7 @@ uint32_t arm_get_spsr_for_bl33_entry(void)
 /*******************************************************************************
  * Configures access to the system counter timer module.
  ******************************************************************************/
+#ifdef ARM_SYS_TIMCTL_BASE
 void arm_configure_sys_timer(void)
 {
 	unsigned int reg_val;
@@ -151,6 +161,7 @@ void arm_configure_sys_timer(void)
 	reg_val = (1 << CNTNSAR_NS_SHIFT(PLAT_ARM_NSTIMER_FRAME_ID));
 	mmio_write_32(ARM_SYS_TIMCTL_BASE + CNTNSAR, reg_val);
 }
+#endif /* ARM_SYS_TIMCTL_BASE */
 
 /*******************************************************************************
  * Returns ARM platform specific memory map regions.
@@ -159,3 +170,27 @@ const mmap_region_t *plat_arm_get_mmap(void)
 {
 	return plat_arm_mmap;
 }
+
+#ifdef ARM_SYS_CNTCTL_BASE
+
+#if ERROR_DEPRECATED
+unsigned int plat_get_syscnt_freq2(void)
+{
+	unsigned int counter_base_frequency;
+#else
+unsigned long long plat_get_syscnt_freq(void)
+{
+	unsigned long long counter_base_frequency;
+#endif /* ERROR_DEPRECATED */
+
+	/* Read the frequency from Frequency modes table */
+	counter_base_frequency = mmio_read_32(ARM_SYS_CNTCTL_BASE + CNTFID_OFF);
+
+	/* The first entry of the frequency modes table must not be 0 */
+	if (counter_base_frequency == 0)
+		panic();
+
+	return counter_base_frequency;
+}
+
+#endif /* ARM_SYS_CNTCTL_BASE */

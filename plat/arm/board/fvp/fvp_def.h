@@ -40,6 +40,10 @@
 
 #define FVP_PRIMARY_CPU			0x0
 
+/* Defines for the Interconnect build selection */
+#define FVP_CCI			1
+#define FVP_CCN			2
+
 /*******************************************************************************
  * FVP memory map related constants
  ******************************************************************************/
@@ -57,19 +61,32 @@
 #define DEVICE0_BASE			0x20000000
 #define DEVICE0_SIZE			0x0c200000
 
+/*
+ *  In case of FVP models with CCN, the CCN register space overlaps into
+ *  the NSRAM area.
+ */
+#if FVP_INTERCONNECT_DRIVER == FVP_CCN
+#define DEVICE1_BASE			0x2e000000
+#define DEVICE1_SIZE			0x1A00000
+#else
 #define DEVICE1_BASE			0x2f000000
 #define DEVICE1_SIZE			0x200000
-
+#define NSRAM_BASE			0x2e000000
+#define NSRAM_SIZE			0x10000
+#endif
 /* Devices in the second GB */
 #define DEVICE2_BASE			0x7fe00000
 #define DEVICE2_SIZE			0x00200000
 
-#define NSRAM_BASE			0x2e000000
-#define NSRAM_SIZE			0x10000
-
 #define PCIE_EXP_BASE			0x40000000
 #define TZRNG_BASE			0x7fe60000
-#define TZNVCTR_BASE			0x7fe70000
+
+/* Non-volatile counters */
+#define TRUSTED_NVCTR_BASE		0x7fe70000
+#define TFW_NVCTR_BASE			(TRUSTED_NVCTR_BASE + 0x0000)
+#define TFW_NVCTR_SIZE			4
+#define NTFW_CTR_BASE			(TRUSTED_NVCTR_BASE + 0x0004)
+#define NTFW_CTR_SIZE			4
 
 /* Keys */
 #define SOC_KEYS_BASE			0x7fe80000

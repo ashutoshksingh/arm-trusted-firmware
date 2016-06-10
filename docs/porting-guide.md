@@ -76,12 +76,12 @@ either mandatory or optional.
 A platform port must enable the Memory Management Unit (MMU) as well as the
 instruction and data caches for each BL stage. Setting up the translation
 tables is the responsibility of the platform port because memory maps differ
-across platforms. A memory translation library (see `lib/aarch64/xlat_helpers.c`
-and `lib/aarch64/xlat_tables.c`) is provided to help in this setup. Note that
-although this library supports non-identity mappings, this is intended only for
-re-mapping peripheral physical addresses and allows platforms with high I/O
-addresses to reduce their virtual address space. All other addresses
-corresponding to code and data must currently use an identity mapping.
+across platforms. A memory translation library (see `lib/xlat_tables/`) is
+provided to help in this setup. Note that although this library supports
+non-identity mappings, this is intended only for re-mapping peripheral physical
+addresses and allows platforms with high I/O addresses to reduce their virtual
+address space. All other addresses corresponding to code and data must currently
+use an identity mapping.
 
 In ARM standard platforms, each BL stage configures the MMU in the
 platform-specific architecture setup function, `blX_plat_arch_setup()`, and uses
@@ -448,6 +448,14 @@ must also be defined:
     Defines the maximum number of open IO handles. Attempting to open more IO
     entities than this value using `io_open()` will fail with -ENOMEM.
 
+*   **#define : MAX_IO_BLOCK_DEVICES**
+
+    Defines the maximum number of registered IO block devices. Attempting to
+    register more devices this value using `io_dev_open()` will fail
+    with -ENOMEM. MAX_IO_BLOCK_DEVICES should be less than MAX_IO_DEVICES.
+    With this macro, multiple block devices could be supported at the same
+    time.
+
 If the platform needs to allocate data within the per-cpu data framework in
 BL31, it should define the following macro. Currently this is only required if
 the platform decides not to use the coherent memory section by undefining the
@@ -489,20 +497,15 @@ Each platform must ensure a file of this name is in the system include path with
 the following macro defined. In the ARM development platforms, this file is
 found in `plat/arm/board/<plat_name>/include/plat_macros.S`.
 
-*   **Macro : plat_print_gic_regs**
+*   **Macro : plat_crash_print_regs**
 
-    This macro allows the crash reporting routine to print GIC registers
-    in case of an unhandled exception in BL31. This aids in debugging and
-    this macro can be defined to be empty in case GIC register reporting is
-    not desired.
-
-*   **Macro : plat_print_interconnect_regs**
-
-    This macro allows the crash reporting routine to print interconnect
+    This macro allows the crash reporting routine to print relevant platform
     registers in case of an unhandled exception in BL31. This aids in debugging
-    and this macro can be defined to be empty in case interconnect register
-    reporting is not desired. In ARM standard platforms, the CCI snoop
-    control registers are reported.
+    and this macro can be defined to be empty in case register reporting is not
+    desired.
+
+    For instance, GIC or interconnect registers may be helpful for
+    troubleshooting.
 
 
 2.2 Handling Reset
@@ -631,6 +634,35 @@ In case the function returns a hash of the key:
 The function returns 0 on success. Any other value means the ROTPK could not be
 retrieved from the platform. The function also reports extra information related
 to the ROTPK in the flags parameter.
+
+
+### Function: plat_get_nv_ctr()
+
+    Argument : void *, unsigned int *
+    Return   : int
+
+This function is mandatory when Trusted Board Boot is enabled. It returns the
+non-volatile counter value stored in the platform in the second argument. The
+cookie in the first argument may be used to select the counter in case the
+platform provides more than one (for example, on platforms that use the default
+TBBR CoT, the cookie will correspond to the OID values defined in
+TRUSTED_FW_NVCOUNTER_OID or NON_TRUSTED_FW_NVCOUNTER_OID).
+
+The function returns 0 on success. Any other value means the counter value could
+not be retrieved from the platform.
+
+
+### Function: plat_set_nv_ctr()
+
+    Argument : void *, unsigned int
+    Return   : int
+
+This function is mandatory when Trusted Board Boot is enabled. It sets a new
+counter value in the platform. The cookie in the first argument may be used to
+select the counter (as explained in plat_get_nv_ctr()).
+
+The function returns 0 on success. Any other value means the counter value could
+not be updated.
 
 
 2.3 Common mandatory modifications
@@ -1242,8 +1274,8 @@ BL33 image. The meminfo provided by this is used by load_image() to
 validate whether the BL33 image can be loaded with in the given
 memory from the given base.
 
-This function isn't needed if either `BL33_BASE` or `EL3_PAYLOAD_BASE` build
-options are used.
+This function isn't needed if either `PRELOADED_BL33_BASE` or `EL3_PAYLOAD_BASE`
+build options are used.
 
 ### Function : bl2_plat_flush_bl31_params() [mandatory]
 
@@ -1259,7 +1291,7 @@ later Bootloader stages with MMU off
 ### Function : plat_get_ns_image_entrypoint() [mandatory]
 
     Argument : void
-    Return   : unsigned long
+    Return   : uintptr_t
 
 As previously described, BL2 is responsible for arranging for control to be
 passed to a normal world BL image through BL31. This function returns the
@@ -1267,8 +1299,8 @@ entrypoint of that image, which BL31 uses to jump to it.
 
 BL2 is responsible for loading the normal world BL33 image (e.g. UEFI).
 
-This function isn't needed if either `BL33_BASE` or `EL3_PAYLOAD_BASE` build
-options are used.
+This function isn't needed if either `PRELOADED_BL33_BASE` or `EL3_PAYLOAD_BASE`
+build options are used.
 
 
 3.3 FWU Boot Loader Stage 2 (BL2U)
@@ -1497,10 +1529,10 @@ state. This function must return a pointer to the `entry_point_info` structure
 (that was copied during `bl31_early_platform_setup()`) if the image exists. It
 should return NULL otherwise.
 
-### Function : plat_get_syscnt_freq() [mandatory]
+### Function : plat_get_syscnt_freq2() [mandatory]
 
     Argument : void
-    Return   : uint64_t
+    Return   : unsigned int
 
 This function is used by the architecture setup code to retrieve the counter
 frequency for the CPU's generic timer.  This value will be programmed into the
@@ -1682,6 +1714,22 @@ its state when it is next powered on (see `pwr_domain_on_finish()`). In the
 latter case, the power domain is expected to save enough state so that it can
 resume execution by restoring this state when its powered on (see
 `pwr_domain_suspend_finish()`).
+
+#### plat_psci_ops.pwr_domain_pwr_down_wfi()
+
+This is an optional function and, if implemented, is expected to perform
+platform specific actions including the `wfi` invocation which allows the
+CPU to powerdown. Since this function is invoked outside the PSCI locks,
+the actions performed in this hook must be local to the CPU or the platform
+must ensure that races between multiple CPUs cannot occur.
+
+The `target_state` has a similar meaning as described in the `pwr_domain_off()`
+operation and it encodes the platform coordinated target local power states for
+the CPU power domain and its parent power domain levels. This function must
+not return back to the caller.
+
+If this function is not implemented by the platform, PSCI generic
+implementation invokes `psci_power_down_wfi()` for power down.
 
 #### plat_psci_ops.pwr_domain_on_finish()
 
@@ -1973,8 +2021,8 @@ build system.
     By default, this flag is defined `yes` by the build system and `BL33`
     build option should be supplied as a build option. The platform has the
     option of excluding the BL33 image in the `fip` image by defining this flag
-    to `no`. If any of the options `EL3_PAYLOAD_BASE` or `BL33_BASE` are used,
-    this flag will be set to `no` automatically.
+    to `no`. If any of the options `EL3_PAYLOAD_BASE` or `PRELOADED_BL33_BASE`
+    are used, this flag will be set to `no` automatically.
 
 5.  C Library
 -------------

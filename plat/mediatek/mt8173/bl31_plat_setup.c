@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015, ARM Limited and Contributors. All rights reserved.
+ * Copyright (c) 2013-2016, ARM Limited and Contributors. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,6 +32,7 @@
 #include <bl_common.h>
 #include <console.h>
 #include <debug.h>
+#include <generic_delay_timer.h>
 #include <mcucfg.h>
 #include <mmio.h>
 #include <mtcmos.h>
@@ -50,13 +51,15 @@ unsigned long __COHERENT_RAM_START__;
 unsigned long __COHERENT_RAM_END__;
 
 /*
- * The next 2 constants identify the extents of the code & RO data region.
- * These addresses are used by the MMU setup code and therefore they must be
- * page-aligned.  It is the responsibility of the linker script to ensure that
- * __RO_START__ and __RO_END__ linker symbols refer to page-aligned addresses.
+ * The next 3 constants identify the extents of the code, RO data region and the
+ * limit of the BL31 image.  These addresses are used by the MMU setup code and
+ * therefore they must be page-aligned.  It is the responsibility of the linker
+ * script to ensure that __RO_START__, __RO_END__ & __BL31_END__ linker symbols
+ * refer to page-aligned addresses.
  */
 #define BL31_RO_BASE (unsigned long)(&__RO_START__)
 #define BL31_RO_LIMIT (unsigned long)(&__RO_END__)
+#define BL31_END (unsigned long)(&__BL31_END__)
 
 /*
  * The next 2 constants identify the extents of the coherent memory region.
@@ -108,6 +111,13 @@ static void platform_setup_cpu(void)
 		MCU_BUS_DCM_EN);
 }
 
+static void platform_setup_sram(void)
+{
+	/* protect BL31 memory from non-secure read/write access */
+	mmio_write_32(SRAMROM_SEC_ADDR, (uint32_t)(BL31_END + 0x3ff) & 0x3fc00);
+	mmio_write_32(SRAMROM_SEC_CTRL, 0x10000ff9);
+}
+
 /*******************************************************************************
  * Return a pointer to the 'entry_point_info' structure of the next image for
  * the security state specified. BL33 corresponds to the non-secure image type
@@ -156,8 +166,9 @@ void bl31_early_platform_setup(bl31_params_t *from_bl2,
 void bl31_platform_setup(void)
 {
 	platform_setup_cpu();
+	platform_setup_sram();
 
-	plat_delay_timer_init();
+	generic_delay_timer_init();
 
 	/* Initialize the gic cpu and distributor interfaces */
 	plat_mt_gic_init();

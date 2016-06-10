@@ -189,8 +189,13 @@ exit:
 	if (skip_wfi)
 		return;
 
-	if (is_power_down_state)
-		psci_power_down_wfi();
+	if (is_power_down_state) {
+		/* The function calls below must not return */
+		if (psci_plat_pm_ops->pwr_domain_pwr_down_wfi)
+			psci_plat_pm_ops->pwr_domain_pwr_down_wfi(state_info);
+		else
+			psci_power_down_wfi();
+	}
 
 	/*
 	 * We will reach here if only retention/standby states have been
@@ -214,7 +219,7 @@ exit:
 void psci_cpu_suspend_finish(unsigned int cpu_idx,
 			     psci_power_state_t *state_info)
 {
-	unsigned long long counter_freq;
+	unsigned int counter_freq;
 	unsigned int max_off_lvl;
 
 	/* Ensure we have been woken up from a suspended state */
@@ -238,7 +243,7 @@ void psci_cpu_suspend_finish(unsigned int cpu_idx,
 	psci_do_pwrup_cache_maintenance();
 
 	/* Re-init the cntfrq_el0 register */
-	counter_freq = plat_get_syscnt_freq();
+	counter_freq = plat_get_syscnt_freq2();
 	write_cntfrq_el0(counter_freq);
 
 	/*
